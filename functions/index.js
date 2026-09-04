@@ -4,6 +4,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
+const { createHash } = require('node:crypto');
 
 initializeApp();
 const db = getFirestore();
@@ -153,4 +154,18 @@ exports.completeOnboarding = onCall({ region: REGION, enforceAppCheck: true }, a
   const batch=db.batch();batch.create(businessRef,business);batch.create(membershipRef,{businessId,userId:uid,role:'owner',status:'active',createdAt:now,updatedAt:now});batch.set(userRef,{businessId,displayName:ownerName,email:request.auth.token.email,phone:business.phone,termsAcceptedAt:now,privacyAcceptedAt:now,createdAt:now,updatedAt:now},{merge:true});batch.create(db.collection('branches').doc(),{businessId,name:'Main branch',location:business.location,active:true,createdAt:now,updatedAt:now});batch.set(db.doc(`businessAccessControls/${businessId}`),{businessId,accessStatus:'active',subscriptionStatus:'trial',updatedAt:now});batch.set(db.doc(`subscriptions/${businessId}`),{businessId,status:'trial',plan:'Starter',trialStartedAt:now,createdAt:now,updatedAt:now});await batch.commit();
   await getAuth().setCustomUserClaims(uid,{businessId,role:'owner',...(request.auth.token.superAdmin===true?{superAdmin:true}:{})});
   return {businessId};
+});
+
+exports.migrateLegacyInventory = onCall({ region: REGION, enforceAppCheck: true }, async request => {
+  if(!request.auth)throw new HttpsError('unauthenticated','Sign in before migrating.');
+  const businessId=cleanText(request.auth.token.businessId,128),items=Array.isArray(request.data?.items)?request.data.items:[];
+  if(!businessId)throw new HttpsError('failed-precondition','No business is assigned to this user.');
+  if(items.length>150)throw new HttpsError('invalid-argument','Migrate at most 150 items at once. Contact support for a larger legacy inventory.');
+  const markerRef=db.doc(`migrationMarkers/${request.auth.uid}_${businessId}`),marker=await markerRef.get();
+  if(marker.exists)return {alreadyCompleted:true,imported:0,skipped:items.length};
+  const membership=await db.doc(`memberships/${request.auth.uid}_${businessId}`).get();
+  if(!membership.exists||membership.data().status!=='active')throw new HttpsError('permission-denied','An active business membership is required.');
+  const write=db.batch(),now=FieldValue.serverTimestamp();let imported=0,skipped=0;
+  for(const raw of items){const name=cleanText(raw?.name,160),expiry=cleanText(raw?.expiry,10),quantity=Number(raw?.quantity);if(!name||!/^\d{4}-\d{2}-\d{2}$/.test(expiry)||!Number.isFinite(quantity)||quantity<0){skipped++;continue}const normalizedName=name.toLocaleLowerCase('en-ZA').replace(/\s+/g,' ').trim(),identity=cleanText(raw.barcode,80)||cleanText(raw.sku,80)||`${normalizedName}|${cleanText(raw.category,100).toLowerCase()}|${cleanText(raw.supplier,160).toLowerCase()}`,productId=createHash('sha256').update(`${businessId}|${identity}`).digest('hex').slice(0,32),batchId=createHash('sha256').update(`${businessId}|${productId}|${expiry}|${raw.id??''}`).digest('hex').slice(0,32),productRef=db.doc(`products/${productId}`),batchRef=db.doc(`batches/${batchId}`);const [existingProduct,existingBatch]=await Promise.all([productRef.get(),batchRef.get()]);if(existingBatch.exists){skipped++;continue}if(!existingProduct.exists)write.create(productRef,{businessId,name,normalizedName,barcode:cleanText(raw.barcode,80),sku:cleanText(raw.sku,80),category:cleanText(raw.category,100),supplier:cleanText(raw.supplier,160),imageUrl:'',sellingPrice:0,costPrice:0,minimumStockLevel:0,storageLocation:'',notes:'Migrated from StockGuard local inventory',unit:cleanText(raw.unit,40)||'units',archived:false,createdBy:request.auth.uid,updatedBy:request.auth.uid,createdAt:now,updatedAt:now});write.create(batchRef,{businessId,productId,batchNumber:`MIG-${batchId.slice(0,8).toUpperCase()}`,quantity,dateReceived:null,expiryDate:expiry,branchId:null,costPrice:0,sellingPrice:0,createdBy:request.auth.uid,createdAt:now,updatedAt:now});imported++}
+  write.create(markerRef,{businessId,userId:request.auth.uid,source:'stockguard-items-v2',itemCount:items.length,imported,skipped,completedAt:now,createdAt:now,updatedAt:now});write.create(db.collection('auditLogs').doc(),{businessId,actorUid:request.auth.uid,action:'legacy.inventory.migrated',details:{source:'stockguard-items-v2',imported,skipped},createdAt:now,updatedAt:now});await write.commit();return {imported,skipped};
 });
