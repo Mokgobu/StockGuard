@@ -1,0 +1,17 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() { return request.auth != null; }
+    function membership(businessId) { return firestore.get(/databases/(default)/documents/memberships/$(request.auth.uid + '_' + businessId)).data; }
+    function activeMember(businessId) { return signedIn() && membership(businessId).status == 'active'; }
+    function canManage(businessId) { return activeMember(businessId) && membership(businessId).role in ['owner', 'manager']; }
+    match /businesses/{businessId}/products/{fileName} {
+      allow read: if activeMember(businessId);
+      allow create, update: if canManage(businessId)
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+      allow delete: if canManage(businessId);
+    }
+    match /{allPaths=**} { allow read, write: if false; }
+  }
+}

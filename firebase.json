@@ -1,8 +1,9 @@
 {
   "firestore": { "rules": "firestore.rules", "indexes": "firestore.indexes.json" },
+  "storage": { "rules": "storage.rules" },
   "functions": { "source": "functions" },
   "hosting": {
-    "public": ".",
+    "public": "dist",
     "ignore": ["firebase.json", "functions/**", "node_modules/**", "stockguard.db"],
     "rewrites": [
       { "source": "/owner-admin", "destination": "/owner-admin.html" },

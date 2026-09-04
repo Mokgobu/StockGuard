@@ -1,10 +1,10 @@
 [build]
-  publish = "."
-  command = ""
+  publish = "dist"
+  command = "npm run build"
 
 [[redirects]]
   from = "/owner-admin"
-  to = "/owner-admin.html"
+  to = "/index.html"
   status = 200
 
 [[redirects]]

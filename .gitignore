@@ -1,2 +1,7 @@
 node_modules/
 stockguard.db
+dist/
+.env
+.env.local
+.firebase/
+firebase-debug.log
