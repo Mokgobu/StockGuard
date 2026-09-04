@@ -1,0 +1,1 @@
+.notice{width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);background:#fff;padding:13px;cursor:pointer}.notice b,.notice span{display:block}.notice span{color:var(--muted);font-size:12px;margin-top:4px}.notice.unread{border-left:4px solid var(--green);background:#f2fbf6}
