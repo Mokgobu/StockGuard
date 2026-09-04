@@ -6,10 +6,10 @@ StockGuard is a Firebase-backed, multi-tenant inventory application with a claim
 
 - Firebase Authentication identifies users.
 - Normal user tokens must contain a `businessId` custom claim.
-- The platform owner token must contain `superAdmin: true`.
+- Owner administration requires `platformAdmins/{uid}` with `role: "super_admin"` and `active: true`.
 - Firestore rules enforce tenant reads and account/platform state on every inventory write.
 - Owner mutations are callable Cloud Functions using the Admin SDK. The client cannot write access controls, platform settings, user profiles, or audit logs.
-- Firebase App Check is required by every owner function. Configure `appCheckSiteKey` in `firebase-config.js` before deployment.
+- Firebase App Check is required by every owner function. Configure `VITE_FIREBASE_APP_CHECK_SITE_KEY` in the deployment environment before deployment.
 
 ## Deploy
 
@@ -17,14 +17,13 @@ StockGuard is a Firebase-backed, multi-tenant inventory application with a claim
 2. Select the project: `firebase use stockguard-32a46`.
 3. Install function dependencies: `npm --prefix functions install`.
 4. Deploy rules, functions, and hosting: `firebase deploy`.
-5. Grant the first owner claim from a trusted administrator workstation using Application Default Credentials: `node functions/set-super-admin.js FIREBASE_UID`.
-6. Sign out and back in so Firebase issues a fresh token.
+5. Confirm the owner's `platformAdmins/{uid}` document has `role: "super_admin"` and `active: true`. From a trusted workstation with Application Default Credentials, `node functions/set-super-admin.js FIREBASE_UID` can create or repair this record.
 
 Never run the claim bootstrap script in a browser or ship service-account credentials with the application. Assign normal users a `businessId` claim through a separate trusted onboarding process.
 
 ## Required initial documents
 
-Create `platformSettings/global` with `maintenanceMode: false` and a `features` map whose switches are true. Each business needs a `businesses/{businessId}` document and a matching `businessAccessControls/{businessId}` document with `accessStatus: "active"` and `subscriptionStatus: "trial"`.
+Create `publicPlatformStatus/current` with `maintenanceMode: false`, an empty `maintenanceMessage`, and all `*Enabled` switches set to true. Each business needs a `businesses/{businessId}` document and a matching `businessAccessControls/{businessId}` document with `accessStatus: "active"` and `subscriptionStatus: "trial"`.
 
 ## Local static server
 

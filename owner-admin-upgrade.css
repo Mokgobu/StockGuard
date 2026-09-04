@@ -1,0 +1,14 @@
+.badge.read_only,
+.badge.past_due {
+  background: #fff1dc;
+  color: var(--amber);
+}
+
+#toast.error-toast {
+  background: var(--red);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: .65;
+}

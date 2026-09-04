@@ -11,12 +11,16 @@ const { createHash } = require('node:crypto');
 initializeApp();
 const db = getFirestore();
 const REGION = 'us-central1';
-const ACCESS = ['active', 'read-only', 'suspended', 'disabled'];
-const SUBSCRIPTIONS = ['trial', 'active', 'past-due', 'cancelled'];
-const FEATURES = ['publicLandingPage', 'registrations', 'login', 'inventoryUpdates', 'barcodeScanner', 'notifications', 'reports', 'signageGenerator'];
+const ACCESS = ['active', 'read_only', 'suspended', 'disabled'];
+const SUBSCRIPTIONS = ['trial', 'active', 'past_due', 'cancelled'];
+const FEATURES = ['registrationsEnabled', 'loginEnabled', 'inventoryUpdatesEnabled', 'notificationsEnabled', 'reportsEnabled', 'signageEnabled'];
 
-function assertOwner(request) {
-  if (!request.auth || request.auth.token.superAdmin !== true) {
+async function assertOwner(request) {
+  if (!request.auth) {
+    throw new HttpsError('permission-denied', 'Verified super administrator access is required.');
+  }
+  const admin = await db.doc(`platformAdmins/${request.auth.uid}`).get();
+  if (!admin.exists || admin.data().role !== 'super_admin' || admin.data().active !== true) {
     throw new HttpsError('permission-denied', 'Verified super administrator access is required.');
   }
 }
@@ -42,22 +46,23 @@ async function countUsers(pageToken, total = 0) {
 }
 
 exports.ownerDashboard = onCall({ region: REGION, enforceAppCheck: true }, async request => {
-  assertOwner(request);
+  await assertOwner(request);
   const [businessSnap, accessSnap, settingsSnap, usersResult] = await Promise.all([
     db.collection('businesses').orderBy('createdAt', 'desc').limit(250).get(),
     db.collection('businessAccessControls').get(),
-    db.doc('platformSettings/global').get(),
+    db.doc('publicPlatformStatus/current').get(),
     countUsers()
   ]);
   const controls = new Map(accessSnap.docs.map(d => [d.id, d.data()]));
   const businesses = await Promise.all(businessSnap.docs.map(async doc => {
     const data = doc.data();
-    const itemCount = await doc.ref.collection('items').count().get();
+    const itemCount = await db.collection('products').where('businessId', '==', doc.id).count().get();
     return {
       id: doc.id,
       name: data.name || 'Unnamed business',
       createdAt: data.createdAt || null,
       lastActivityAt: data.lastActivityAt || null,
+      ownerName: data.ownerName || '',
       productCount: itemCount.data().count,
       plan: data.plan || 'Starter',
       ...controls.get(doc.id)
@@ -67,14 +72,14 @@ exports.ownerDashboard = onCall({ region: REGION, enforceAppCheck: true }, async
 });
 
 exports.ownerAuditLogs = onCall({ region: REGION, enforceAppCheck: true }, async request => {
-  assertOwner(request);
+  await assertOwner(request);
   const limit = Math.min(Math.max(Number(request.data?.limit) || 50, 1), 200);
   const snap = await db.collection('adminAuditLogs').orderBy('createdAt', 'desc').limit(limit).get();
   return { logs: snap.docs.map(d => ({ id: d.id, ...d.data() })) };
 });
 
 exports.setBusinessAccess = onCall({ region: REGION, enforceAppCheck: true }, async request => {
-  assertOwner(request);
+  await assertOwner(request);
   const businessId = cleanText(request.data?.businessId, 128);
   const accessStatus = cleanText(request.data?.accessStatus, 20).toLowerCase();
   const reason = cleanText(request.data?.reason);
@@ -96,14 +101,14 @@ exports.setBusinessAccess = onCall({ region: REGION, enforceAppCheck: true }, as
     if (effectiveAtRaw) change.effectiveAt = Timestamp.fromDate(new Date(effectiveAtRaw));
     tx.set(controlRef, change, { merge: true });
     tx.set(db.collection('adminAuditLogs').doc(), audit(request, 'business.access.changed', {
-      businessId, businessName: business.name, previousStatus, newStatus: accessStatus, reason
+      targetBusinessId: businessId, businessName: business.name, setting: 'accessStatus', previousValue: previousStatus, newValue: accessStatus, reason
     }));
   });
   return { ok: true };
 });
 
 exports.setSubscriptionStatus = onCall({ region: REGION, enforceAppCheck: true }, async request => {
-  assertOwner(request);
+  await assertOwner(request);
   const businessId = cleanText(request.data?.businessId, 128);
   const subscriptionStatus = cleanText(request.data?.subscriptionStatus, 20).toLowerCase();
   const reason = cleanText(request.data?.reason);
@@ -113,16 +118,16 @@ exports.setSubscriptionStatus = onCall({ region: REGION, enforceAppCheck: true }
     const old = await tx.get(ref);
     const previousStatus = old.exists ? old.data().subscriptionStatus : 'trial';
     tx.set(ref, { subscriptionStatus, subscriptionReason: reason, updatedAt: FieldValue.serverTimestamp(), updatedBy: request.auth.uid }, { merge: true });
-    tx.set(db.collection('adminAuditLogs').doc(), audit(request, 'business.subscription.changed', { businessId, previousStatus, newStatus: subscriptionStatus, reason }));
+    tx.set(db.collection('adminAuditLogs').doc(), audit(request, 'business.subscription.changed', { targetBusinessId: businessId, setting: 'subscriptionStatus', previousValue: previousStatus, newValue: subscriptionStatus, reason }));
   });
   return { ok: true };
 });
 
 exports.updatePlatformSettings = onCall({ region: REGION, enforceAppCheck: true }, async request => {
-  assertOwner(request);
+  await assertOwner(request);
   const reason = cleanText(request.data?.reason);
   if (!reason) throw new HttpsError('invalid-argument', 'A reason is required.');
-  const ref = db.doc('platformSettings/global');
+  const ref = db.doc('publicPlatformStatus/current');
   await db.runTransaction(async tx => {
     const snap = await tx.get(ref);
     const previous = snap.exists ? snap.data() : {};
@@ -130,15 +135,15 @@ exports.updatePlatformSettings = onCall({ region: REGION, enforceAppCheck: true 
     if (typeof request.data?.maintenanceMode === 'boolean') next.maintenanceMode = request.data.maintenanceMode;
     if (typeof request.data?.maintenanceMessage === 'string') next.maintenanceMessage = cleanText(request.data.maintenanceMessage, 500);
     next.estimatedReturnAt = request.data?.estimatedReturnAt ? Timestamp.fromDate(new Date(request.data.estimatedReturnAt)) : null;
-    next.features = { ...(previous.features || {}) };
-    for (const key of FEATURES) if (typeof request.data?.features?.[key] === 'boolean') next.features[key] = request.data.features[key];
-    const shutdown = next.maintenanceMode && next.features.login === false;
+    for (const key of FEATURES) if (typeof request.data?.[key] === 'boolean') next[key] = request.data[key];
+    const shutdown = next.maintenanceMode && next.loginEnabled === false;
     if (shutdown && request.data?.shutdownConfirmation !== 'SHUT DOWN STOCKGUARD') throw new HttpsError('failed-precondition', 'Global shutdown confirmation is required.');
     next.updatedAt = FieldValue.serverTimestamp(); next.updatedBy = request.auth.uid;
     tx.set(ref, next, { merge: true });
     tx.set(db.collection('adminAuditLogs').doc(), audit(request, 'platform.settings.changed', {
-      previousStatus: { maintenanceMode: Boolean(previous.maintenanceMode), features: previous.features || {} },
-      newStatus: { maintenanceMode: Boolean(next.maintenanceMode), features: next.features }, reason
+      targetBusinessId: null, setting: 'platformStatus',
+      previousValue: { maintenanceMode: Boolean(previous.maintenanceMode), ...Object.fromEntries(FEATURES.map(key => [key, previous[key] !== false])) },
+      newValue: { maintenanceMode: Boolean(next.maintenanceMode), ...Object.fromEntries(FEATURES.map(key => [key, next[key] !== false])) }, reason
     }));
   });
   return { ok: true };
