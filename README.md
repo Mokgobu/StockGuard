@@ -14,7 +14,7 @@ StockGuard is a Firebase-backed, multi-tenant inventory application with a claim
 ## Deploy
 
 1. Install the Firebase CLI and authenticate: `firebase login`.
-2. Select the project: `firebase use stockguard-12`.
+2. Select the project: `firebase use stockguard-32a46`.
 3. Install function dependencies: `npm --prefix functions install`.
 4. Deploy rules, functions, and hosting: `firebase deploy`.
 5. Grant the first owner claim from a trusted administrator workstation using Application Default Credentials: `node functions/set-super-admin.js FIREBASE_UID`.
