@@ -2,7 +2,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn(){return request.auth!=null;}
-    function superAdmin(){return signedIn()&&exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid))&&get(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)).data.role=='super_admin'&&get(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)).data.active==true;}
+    function superAdmin(){return signedIn()&&request.auth.token.superAdmin==true&&exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid))&&get(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)).data.role=='super_admin'&&get(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)).data.active==true;}
     function memberId(businessId){return request.auth.uid+'_'+businessId;}
     function membership(businessId){return get(/databases/$(database)/documents/memberships/$(memberId(businessId))).data;}
     function activeMember(businessId){return signedIn()&&membership(businessId).status=='active';}

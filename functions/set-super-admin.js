@@ -6,6 +6,7 @@ const uid = process.argv[2];
 if (!uid) { console.error('Usage: node set-super-admin.js <firebase-uid>'); process.exit(1); }
 initializeApp({ credential: applicationDefault() });
 getAuth().getUser(uid)
+  .then(user => getAuth().setCustomUserClaims(uid, { ...(user.customClaims || {}), superAdmin: true }))
   .then(() => getFirestore().doc(`platformAdmins/${uid}`).set({ role: 'super_admin', active: true, updatedAt: FieldValue.serverTimestamp() }, { merge: true }))
-  .then(() => console.log(`Active super_admin record granted to UID ${uid}.`))
+  .then(() => console.log(`Active super_admin claim and admin record granted to UID ${uid}.`))
   .catch(error => { console.error(error); process.exitCode = 1; });

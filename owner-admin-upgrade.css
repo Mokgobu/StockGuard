@@ -1,4 +1,4 @@
-.badge.read_only,
+.badge.read-only,
 .badge.past_due {
   background: #fff1dc;
   color: var(--amber);

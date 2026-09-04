@@ -11,12 +11,12 @@ const { createHash } = require('node:crypto');
 initializeApp();
 const db = getFirestore();
 const REGION = 'us-central1';
-const ACCESS = ['active', 'read_only', 'suspended', 'disabled'];
+const ACCESS = ['active', 'read-only', 'suspended', 'disabled'];
 const SUBSCRIPTIONS = ['trial', 'active', 'past_due', 'cancelled'];
-const FEATURES = ['registrationsEnabled', 'loginEnabled', 'inventoryUpdatesEnabled', 'notificationsEnabled', 'reportsEnabled', 'signageEnabled'];
+const FEATURES = ['publicLandingPageEnabled', 'registrationsEnabled', 'loginEnabled', 'inventoryUpdatesEnabled', 'barcodeScannerEnabled', 'notificationsEnabled', 'reportsEnabled', 'signageEnabled'];
 
 async function assertOwner(request) {
-  if (!request.auth) {
+  if (!request.auth || request.auth.token.superAdmin !== true) {
     throw new HttpsError('permission-denied', 'Verified super administrator access is required.');
   }
   const admin = await db.doc(`platformAdmins/${request.auth.uid}`).get();
@@ -47,15 +47,20 @@ async function countUsers(pageToken, total = 0) {
 
 exports.ownerDashboard = onCall({ region: REGION, enforceAppCheck: true }, async request => {
   await assertOwner(request);
-  const [businessSnap, accessSnap, settingsSnap, usersResult] = await Promise.all([
+  const [businessSnap, accessSnap, subscriptionSnap, settingsSnap, publicSettingsSnap, usersResult] = await Promise.all([
     db.collection('businesses').orderBy('createdAt', 'desc').limit(250).get(),
     db.collection('businessAccessControls').get(),
+    db.collection('subscriptions').get(),
+    db.doc('platformSettings/current').get(),
     db.doc('publicPlatformStatus/current').get(),
     countUsers()
   ]);
   const controls = new Map(accessSnap.docs.map(d => [d.id, d.data()]));
+  const subscriptions = new Map(subscriptionSnap.docs.map(d => [d.id, d.data()]));
   const businesses = await Promise.all(businessSnap.docs.map(async doc => {
     const data = doc.data();
+    const control = controls.get(doc.id) || {};
+    const subscription = subscriptions.get(doc.id) || {};
     const itemCount = await db.collection('products').where('businessId', '==', doc.id).count().get();
     return {
       id: doc.id,
@@ -64,11 +69,14 @@ exports.ownerDashboard = onCall({ region: REGION, enforceAppCheck: true }, async
       lastActivityAt: data.lastActivityAt || null,
       ownerName: data.ownerName || '',
       productCount: itemCount.data().count,
-      plan: data.plan || 'Starter',
-      ...controls.get(doc.id)
+      plan: subscription.plan || data.plan || 'Starter',
+      subscriptionRenewalAt: subscription.renewsAt || subscription.trialEndsAt || null,
+      ...control,
+      accessStatus: String(control.accessStatus || 'active').replace('_', '-'),
+      subscriptionStatus: control.subscriptionStatus || subscription.status || 'trial'
     };
   }));
-  return { businesses, totalUsers: usersResult, settings: settingsSnap.exists ? settingsSnap.data() : null };
+  return { businesses, totalUsers: usersResult, settings: settingsSnap.exists ? settingsSnap.data() : (publicSettingsSnap.exists ? publicSettingsSnap.data() : null) };
 });
 
 exports.ownerAuditLogs = onCall({ region: REGION, enforceAppCheck: true }, async request => {
@@ -81,7 +89,7 @@ exports.ownerAuditLogs = onCall({ region: REGION, enforceAppCheck: true }, async
 exports.setBusinessAccess = onCall({ region: REGION, enforceAppCheck: true }, async request => {
   await assertOwner(request);
   const businessId = cleanText(request.data?.businessId, 128);
-  const accessStatus = cleanText(request.data?.accessStatus, 20).toLowerCase();
+  const accessStatus = cleanText(request.data?.accessStatus, 20).toLowerCase().replace('_', '-');
   const reason = cleanText(request.data?.reason);
   const note = cleanText(request.data?.note, 2000);
   const effectiveAtRaw = request.data?.effectiveAt;
@@ -99,6 +107,7 @@ exports.setBusinessAccess = onCall({ region: REGION, enforceAppCheck: true }, as
     const previousStatus = controlDoc.exists ? controlDoc.data().accessStatus : 'active';
     const change = { accessStatus, reason, internalNote: note, updatedAt: FieldValue.serverTimestamp(), updatedBy: request.auth.uid };
     if (effectiveAtRaw) change.effectiveAt = Timestamp.fromDate(new Date(effectiveAtRaw));
+    else change.effectiveAt = null;
     tx.set(controlRef, change, { merge: true });
     tx.set(db.collection('adminAuditLogs').doc(), audit(request, 'business.access.changed', {
       targetBusinessId: businessId, businessName: business.name, setting: 'accessStatus', previousValue: previousStatus, newValue: accessStatus, reason
@@ -127,9 +136,10 @@ exports.updatePlatformSettings = onCall({ region: REGION, enforceAppCheck: true 
   await assertOwner(request);
   const reason = cleanText(request.data?.reason);
   if (!reason) throw new HttpsError('invalid-argument', 'A reason is required.');
-  const ref = db.doc('publicPlatformStatus/current');
+  const publicRef = db.doc('publicPlatformStatus/current');
+  const privateRef = db.doc('platformSettings/current');
   await db.runTransaction(async tx => {
-    const snap = await tx.get(ref);
+    const snap = await tx.get(privateRef);
     const previous = snap.exists ? snap.data() : {};
     const next = { ...previous };
     if (typeof request.data?.maintenanceMode === 'boolean') next.maintenanceMode = request.data.maintenanceMode;
@@ -139,7 +149,8 @@ exports.updatePlatformSettings = onCall({ region: REGION, enforceAppCheck: true 
     const shutdown = next.maintenanceMode && next.loginEnabled === false;
     if (shutdown && request.data?.shutdownConfirmation !== 'SHUT DOWN STOCKGUARD') throw new HttpsError('failed-precondition', 'Global shutdown confirmation is required.');
     next.updatedAt = FieldValue.serverTimestamp(); next.updatedBy = request.auth.uid;
-    tx.set(ref, next, { merge: true });
+    tx.set(privateRef, next, { merge: true });
+    tx.set(publicRef, next, { merge: true });
     tx.set(db.collection('adminAuditLogs').doc(), audit(request, 'platform.settings.changed', {
       targetBusinessId: null, setting: 'platformStatus',
       previousValue: { maintenanceMode: Boolean(previous.maintenanceMode), ...Object.fromEntries(FEATURES.map(key => [key, previous[key] !== false])) },
@@ -151,6 +162,8 @@ exports.updatePlatformSettings = onCall({ region: REGION, enforceAppCheck: true 
 
 exports.completeOnboarding = onCall({ region: REGION, enforceAppCheck: true }, async request => {
   if (!request.auth || request.auth.token.email_verified !== true) throw new HttpsError('permission-denied', 'Verify your email before onboarding.');
+  const platform = await db.doc('publicPlatformStatus/current').get();
+  if (platform.data()?.registrationsEnabled === false) throw new HttpsError('failed-precondition', 'New registrations are temporarily unavailable.');
   const d=request.data||{}, uid=request.auth.uid, businessName=cleanText(d.businessName,120), ownerName=cleanText(d.ownerName,100);
   if(!businessName||!ownerName||!d.termsAccepted||!d.privacyAccepted)throw new HttpsError('invalid-argument','Business details and legal acceptance are required.');
   const existing=await db.collection('memberships').where('userId','==',uid).where('status','==','active').limit(1).get();
