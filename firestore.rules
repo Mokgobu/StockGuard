@@ -1,49 +1,37 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
-    function isSuperAdmin() { return signedIn() && request.auth.token.superAdmin == true; }
-    function businessId() { return request.auth.token.businessId; }
-    function belongsTo(id) { return signedIn() && (isSuperAdmin() || businessId() == id); }
-    function access(id) { return get(/databases/$(database)/documents/businessAccessControls/$(id)).data; }
-    function canRead(id) { return belongsTo(id) && access(id).accessStatus in ['active', 'read-only', 'suspended']; }
-    function canWrite(id) {
-      return belongsTo(id)
-        && access(id).accessStatus == 'active'
-        && get(/databases/$(database)/documents/platformSettings/global).data.features.inventoryUpdates == true
-        && get(/databases/$(database)/documents/platformSettings/global).data.maintenanceMode != true;
-    }
-
-    match /businesses/{id} {
-      allow read: if belongsTo(id);
-      allow write: if false;
-      match /items/{itemId} {
-        allow read: if canRead(id);
-        allow create, update, delete: if canWrite(id);
-      }
-      match /{document=**} {
-        allow read: if canRead(id);
-        allow write: if canWrite(id);
-      }
-    }
-
-    match /users/{uid} {
-      allow read: if signedIn() && (request.auth.uid == uid || isSuperAdmin());
-      allow write: if false;
-    }
-
-    match /platformSettings/{doc} {
-      allow read: if true;
-      allow write: if false;
-    }
-    match /businessAccessControls/{id} {
-      allow read: if belongsTo(id);
-      allow write: if false;
-    }
-    match /adminAuditLogs/{id} {
-      allow read: if isSuperAdmin();
-      allow write: if false;
-    }
-    match /{document=**} { allow read, write: if false; }
+    function signedIn(){return request.auth!=null;}
+    function superAdmin(){return signedIn()&&request.auth.token.get('superAdmin',false)==true;}
+    function memberId(businessId){return request.auth.uid+'_'+businessId;}
+    function membership(businessId){return get(/databases/$(database)/documents/memberships/$(memberId(businessId))).data;}
+    function activeMember(businessId){return signedIn()&&membership(businessId).status=='active';}
+    function role(businessId){return membership(businessId).role;}
+    function isOwner(businessId){return activeMember(businessId)&&role(businessId)=='owner';}
+    function isManager(businessId){return activeMember(businessId)&&role(businessId) in ['owner','manager'];}
+    function access(businessId){return get(/databases/$(database)/documents/businessAccessControls/$(businessId)).data.accessStatus;}
+    function readable(businessId){return superAdmin()||(activeMember(businessId)&&access(businessId) in ['active','read-only','suspended']);}
+    function writable(businessId){return !superAdmin()&&activeMember(businessId)&&access(businessId)=='active'&&get(/databases/$(database)/documents/platformSettings/global).data.maintenanceMode!=true&&get(/databases/$(database)/documents/platformSettings/global).data.features.inventoryUpdates==true;}
+    function sameBusiness(){return request.resource.data.businessId==resource.data.businessId;}
+    function validTenantCreate(){return request.resource.data.businessId is string&&activeMember(request.resource.data.businessId);}
+    function timestampsOnCreate(){return request.resource.data.createdAt==request.time&&request.resource.data.updatedAt==request.time;}
+    function timestampOnUpdate(){return request.resource.data.createdAt==resource.data.createdAt&&request.resource.data.updatedAt==request.time;}
+    match /platformSettings/{id}{allow read:if true;allow write:if false;}
+    match /businessAccessControls/{businessId}{allow read:if superAdmin()||activeMember(businessId);allow write:if false;}
+    match /adminAuditLogs/{id}{allow read:if superAdmin();allow write:if false;}
+    match /users/{uid}{allow read:if signedIn()&&(request.auth.uid==uid||superAdmin());allow create:if signedIn()&&request.auth.uid==uid&&request.resource.data.email==request.auth.token.email;allow update:if signedIn()&&request.auth.uid==uid&&request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName','phone','notificationPreferences','updatedAt'])&&request.resource.data.updatedAt==request.time;allow delete:if false;}
+    match /businesses/{businessId}{allow read:if readable(businessId);allow update:if writable(businessId)&&isOwner(businessId)&&sameBusiness()&&timestampOnUpdate()&&request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','ownerName','type','email','phone','location','employeeCount','warningPeriods','discounts','updatedAt']);allow create,delete:if false;}
+    match /memberships/{id}{allow read:if signedIn()&&(resource.data.userId==request.auth.uid||activeMember(resource.data.businessId)||superAdmin());allow write:if false;}
+    match /branches/{id}{allow read:if readable(resource.data.businessId);allow create:if validTenantCreate()&&writable(request.resource.data.businessId)&&isManager(request.resource.data.businessId)&&timestampsOnCreate();allow update:if writable(resource.data.businessId)&&isManager(resource.data.businessId)&&sameBusiness()&&timestampOnUpdate();allow delete:if false;}
+    match /products/{id}{allow read:if readable(resource.data.businessId);allow create:if validTenantCreate()&&writable(request.resource.data.businessId)&&timestampsOnCreate()&&request.resource.data.createdBy==request.auth.uid&&request.resource.data.archived==false;allow update:if writable(resource.data.businessId)&&sameBusiness()&&timestampOnUpdate()&&request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','normalizedName','barcode','sku','category','supplier','imageUrl','sellingPrice','costPrice','minimumStockLevel','storageLocation','notes','archived','updatedAt','updatedBy']);allow delete:if false;}
+    match /batches/{id}{allow read:if readable(resource.data.businessId);allow create:if validTenantCreate()&&writable(request.resource.data.businessId)&&timestampsOnCreate()&&request.resource.data.createdBy==request.auth.uid&&request.resource.data.quantity>=0;allow update:if writable(resource.data.businessId)&&sameBusiness()&&timestampOnUpdate()&&request.resource.data.quantity>=0;allow delete:if false;}
+    match /notifications/{id}{allow read:if signedIn()&&resource.data.userId==request.auth.uid&&readable(resource.data.businessId);allow update:if signedIn()&&resource.data.userId==request.auth.uid&&sameBusiness()&&request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt','updatedAt'])&&request.resource.data.updatedAt==request.time;allow create,delete:if false;}
+    match /tasks/{id}{allow read:if readable(resource.data.businessId);allow create:if validTenantCreate()&&writable(request.resource.data.businessId)&&isManager(request.resource.data.businessId)&&timestampsOnCreate();allow update:if writable(resource.data.businessId)&&sameBusiness()&&timestampOnUpdate()&&(isManager(resource.data.businessId)||resource.data.assignedTo==request.auth.uid)&&request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title','instructions','assignedTo','branchId','storageArea','dueAt','status','completedAt','completedBy','updatedAt']);allow delete:if false;}
+    match /promotions/{id}{allow read:if readable(resource.data.businessId);allow create:if validTenantCreate()&&writable(request.resource.data.businessId)&&isManager(request.resource.data.businessId)&&timestampsOnCreate();allow update:if writable(resource.data.businessId)&&isManager(resource.data.businessId)&&sameBusiness()&&timestampOnUpdate();allow delete:if false;}
+    match /stockActions/{id}{allow read:if readable(resource.data.businessId);allow create:if validTenantCreate()&&writable(request.resource.data.businessId)&&timestampsOnCreate()&&request.resource.data.createdBy==request.auth.uid&&request.resource.data.quantity>0;allow update:if writable(resource.data.businessId)&&isManager(resource.data.businessId)&&sameBusiness()&&timestampOnUpdate();allow delete:if false;}
+    match /auditLogs/{id}{allow read:if readable(resource.data.businessId)&&isManager(resource.data.businessId);allow write:if false;}
+    match /subscriptions/{businessId}{allow read:if superAdmin()||isOwner(businessId);allow write:if false;}
+    match /migrationMarkers/{id}{allow read:if signedIn()&&resource.data.userId==request.auth.uid;allow write:if false;}
+    match /{document=**}{allow read,write:if false;}
   }
 }
