@@ -1,0 +1,1 @@
+export function InventoryPage(){return <><header className="topbar"><div><p className="eyebrow">Products &amp; batches</p><h1>Inventory</h1></div><button className="button">Add product</button></header><section className="panel"><div className="empty">Inventory tools are being connected to Firestore.</div></section></>}

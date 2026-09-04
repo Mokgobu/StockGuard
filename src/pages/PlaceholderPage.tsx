@@ -1,0 +1,1 @@
+export function PlaceholderPage({title}:{title:string}){return <><header className="topbar"><div><p className="eyebrow">StockGuard</p><h1>{title.replace('-', ' ')}</h1></div></header><section className="panel"><div className="empty">This protected module is scheduled in the upgrade plan.</div></section></>}
