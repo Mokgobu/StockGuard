@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0d7b52">
+  <title>StockGuard | Expiry tracker</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="access-states.css">
+</head>
+<body>
+  <section id="loginGate" class="state-screen" hidden><form id="userLogin" class="state-card"><span class="brand-mark">✓</span><p class="eyebrow">StockGuard secure access</p><h1>Welcome back</h1><p>Sign in to your business inventory.</p><label>Email<input name="email" type="email" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button class="primary" type="submit">Sign in</button><p id="loginError" class="state-error" role="alert"></p></form></section>
+  <section id="accountState" class="state-screen" hidden><div class="state-card"><span class="brand-mark">✓</span><p class="eyebrow" id="stateEyebrow">Account notice</p><h1 id="stateTitle"></h1><p id="stateMessage"></p><p id="returnTime"></p><button id="stateExport" class="outline" hidden>Download account data</button><button id="stateSignOut" class="primary">Sign out</button></div></section>
+  <div class="app-shell" hidden>
+    <aside class="sidebar">
+      <a class="brand" href="#dashboard"><span class="brand-mark">✓</span><span><b>StockGuard</b><small>Expiry tracker</small></span></a>
+      <nav aria-label="Main navigation">
+        <button class="nav active" data-view="dashboard">Overview</button>
+        <button class="nav" data-view="inventory">All stock</button>
+        <button class="nav" data-view="alerts">Expiry alerts <i id="navAlertCount">0</i></button>
+        <button class="nav" data-view="reports">Reports</button>
+      </nav>
+      <p class="sidebar-note">Keep stock fresh,<br>reduce waste.</p>
+    </aside>
+    <main>
+      <header>
+        <div><p class="eyebrow">Inventory control</p><h1 id="pageTitle">Good afternoon, Manager</h1></div>
+        <div class="head-actions"><button class="outline" id="exportBtn">Export CSV</button><button class="primary" id="addBtn">+ Add stock</button></div>
+      </header>
+      <div id="readOnlyNotice" class="readonly-notice" hidden><b>Read-only access</b> You can view and export your data, but changes are temporarily disabled.</div>
+
+      <section class="view active" id="dashboard">
+        <div class="hero"><div><span>EXPIRY WATCH</span><h2>Know what needs attention.</h2><p>StockGuard sorts every product by expiry date so your team can act before stock is wasted.</p></div><div class="hero-icon">⌁</div></div>
+        <div class="stats">
+          <article><span>Products tracked</span><strong id="totalCount">0</strong><small>Across your inventory</small></article>
+          <article class="safe"><span>Safe stock</span><strong id="safeCount">0</strong><small>More than 14 days left</small></article>
+          <article class="warning"><span>Expiring soon</span><strong id="soonCount">0</strong><small>Within 14 days</small></article>
+          <article class="danger"><span>Expired</span><strong id="expiredCount">0</strong><small>Needs action now</small></article>
+        </div>
+        <div class="two-column">
+          <section class="panel"><div class="panel-title"><div><h3>Priority expiry watch</h3><p>Items that need attention first</p></div><button class="text-btn" data-go="alerts">View all</button></div><div id="priorityList" class="list"></div></section>
+          <section class="panel"><div class="panel-title"><div><h3>Quick actions</h3><p>Keep your inventory accurate</p></div></div><div class="quick-grid"><button id="quickAdd">＋<span>Add product</span></button><button data-go="inventory">▤<span>Browse stock</span></button><button data-go="alerts">⚠<span>Review alerts</span></button><button id="clearExpired">⌫<span>Clear expired</span></button></div></section>
+        </div>
+      </section>
+
+      <section class="view" id="inventory">
+        <div class="toolbar"><input type="search" id="search" placeholder="Search product, category or supplier…"><select id="filter"><option value="all">All statuses</option><option value="safe">Safe stock</option><option value="soon">Expiring soon</option><option value="expired">Expired</option></select></div>
+        <section class="panel"><div class="panel-title"><div><h3>All stock</h3><p id="inventorySubtitle">Products currently being tracked</p></div></div><div class="table-wrap"><table><thead><tr><th>Product</th><th>Quantity</th><th>Expiry date</th><th>Supplier</th><th>Status</th><th></th></tr></thead><tbody id="stockTable"></tbody></table></div></section>
+      </section>
+
+      <section class="view" id="alerts"><div class="alert-rules"><div><b>14 days</b><span>Plan an action</span></div><div><b>7 days</b><span>Priority item</span></div><div><b>Today</b><span>Use or remove</span></div></div><section class="panel"><div class="panel-title"><div><h3>Expiry alerts</h3><p>Ordered by nearest expiry date</p></div></div><div id="alertList" class="list"></div></section></section>
+
+      <section class="view" id="reports"><section class="panel report"><div class="panel-title"><div><h3>Stock health report</h3><p>A quick picture of your current inventory</p></div></div><div class="report-numbers"><div><span>Total units</span><b id="unitCount">0</b></div><div><span>At-risk units</span><b id="riskUnits">0</b></div><div><span>Expired units</span><b id="expiredUnits">0</b></div></div><div class="bars"><div><span>Safe stock</span><i><em id="safeBar"></em></i><b id="safePct">0%</b></div><div><span>Expiring soon</span><i><em id="soonBar"></em></i><b id="soonPct">0%</b></div><div><span>Expired</span><i><em id="expiredBar"></em></i><b id="expiredPct">0%</b></div></div></section></section>
+    </main>
+  </div>
+  <dialog id="productDialog"><form id="productForm" method="dialog"><div class="modal-head"><div><p class="eyebrow">Inventory</p><h2 id="dialogTitle">Add stock item</h2></div><button class="close" type="button" id="closeDialog">×</button></div><input type="hidden" name="id"><div class="form-grid"><label>Product name<input name="name" required placeholder="e.g. Full cream milk"></label><label>Category<input name="category" placeholder="e.g. Dairy"></label><label>Quantity<input name="quantity" type="number" min="0" required placeholder="0"></label><label>Unit<input name="unit" placeholder="e.g. bottles"></label><label>Expiry date<input name="expiry" type="date" required></label><label>Supplier<input name="supplier" placeholder="Supplier name"></label></div><div class="form-actions"><button class="outline" type="button" id="cancelDialog">Cancel</button><button class="primary" type="submit" id="saveItemBtn">Save item</button></div></form></dialog>
+  <div id="toast" role="status"></div>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

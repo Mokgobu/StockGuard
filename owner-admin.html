@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow"><title>StockGuard Owner Control Centre</title>
+  <link rel="stylesheet" href="owner-admin.css">
+</head>
+<body>
+  <section id="authGate" class="gate">
+    <form id="ownerLogin" class="login-card">
+      <div class="owner-mark">SG</div><p class="eyebrow">Restricted system</p><h1>Owner Control Centre</h1>
+      <p>Sign in with your authorised StockGuard owner account.</p>
+      <label>Email<input type="email" name="email" autocomplete="username" required></label>
+      <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
+      <button class="primary" type="submit">Secure sign in</button><p id="authError" class="error" role="alert"></p>
+    </form>
+  </section>
+
+  <div id="ownerApp" class="owner-app" hidden>
+    <aside><a class="brand" href="/owner-admin"><span>SG</span><b>StockGuard<small>Owner Control Centre</small></b></a>
+      <nav><button class="nav active" data-view="overview">Overview</button><button class="nav" data-view="businesses">Businesses</button><button class="nav" data-view="platform">Platform controls</button><button class="nav" data-view="audit">Audit log</button></nav>
+      <button id="signOut" class="signout">Sign out</button>
+    </aside>
+    <main>
+      <header><div><p class="eyebrow">Super administrator</p><h1 id="title">Platform overview</h1></div><div class="secure-chip">● Verified owner session</div></header>
+      <section id="overview" class="view active">
+        <div id="stats" class="stats"></div>
+        <section class="panel"><div class="panel-head"><div><h2>Recently registered businesses</h2><p>Account health and latest activity</p></div><button class="secondary" data-open="businesses">Manage all</button></div><div id="recentBusinesses"></div></section>
+      </section>
+      <section id="businesses" class="view">
+        <div class="toolbar"><input id="businessSearch" type="search" placeholder="Search businesses…"><select id="statusFilter"><option value="all">All access states</option><option value="active">Active</option><option value="read-only">Read-only</option><option value="suspended">Suspended</option><option value="disabled">Disabled</option></select></div>
+        <section class="panel"><div class="table-wrap"><table><thead><tr><th>Business</th><th>Plan</th><th>Subscription</th><th>Access</th><th>Products</th><th>Last activity</th><th></th></tr></thead><tbody id="businessRows"></tbody></table></div></section>
+      </section>
+      <section id="platform" class="view">
+        <div class="warning-banner"><b>Platform-wide controls</b><span>Changes take effect immediately for normal users. Your owner access always remains available.</span></div>
+        <form id="platformForm" class="panel controls"><label class="toggle-row"><span><b>Maintenance mode</b><small>Show the maintenance experience to normal users.</small></span><input id="maintenanceMode" type="checkbox"></label>
+          <label>Maintenance message<textarea id="maintenanceMessage" rows="3" placeholder="We are making StockGuard better…"></textarea></label><label>Estimated return time<input id="estimatedReturnAt" type="datetime-local"></label>
+          <h2>Feature availability</h2><div id="featureSwitches" class="feature-grid"></div>
+          <label>Reason for this change<input id="platformReason" required placeholder="Required for the audit log"></label>
+          <div id="shutdownField" hidden><label>Additional shutdown confirmation<input id="shutdownConfirmation" placeholder="Type SHUT DOWN STOCKGUARD"></label></div>
+          <button class="primary" type="submit">Save platform controls</button>
+        </form>
+      </section>
+      <section id="audit" class="view"><section class="panel"><div class="panel-head"><div><h2>Immutable owner audit log</h2><p>Server-recorded administrative activity</p></div><button id="refreshAudit" class="secondary">Refresh</button></div><div id="auditList" class="audit-list"></div></section></section>
+    </main>
+  </div>
+
+  <dialog id="accessDialog"><form id="accessForm"><div class="dialog-head"><div><p class="eyebrow">Business access</p><h2 id="accessTitle">Change access</h2></div><button type="button" data-close>×</button></div>
+    <input type="hidden" id="businessId"><input type="hidden" id="businessName"><input type="hidden" id="originalSubscription"><label>Subscription status<select id="subscriptionStatus"><option value="trial">Trial</option><option value="active">Active</option><option value="past-due">Past due</option><option value="cancelled">Cancelled</option></select></label><label>Access status<select id="accessStatus"><option value="active">Active</option><option value="read-only">Read-only</option><option value="suspended">Suspended</option><option value="disabled">Disabled</option></select></label>
+    <div id="impact" class="impact"></div><label>Reason<input id="accessReason" required maxlength="1000"></label><label>Internal administrator note<textarea id="adminNote" rows="3" maxlength="2000"></textarea></label><label>Optional effective date<input id="effectiveAt" type="datetime-local"></label>
+    <label id="nameConfirmWrap" hidden>Type the business name to disable it<input id="nameConfirmation" autocomplete="off"></label><div class="dialog-actions"><button type="button" class="secondary" data-close>Cancel</button><button id="confirmAccess" class="danger" type="submit">Confirm change</button></div>
+  </form></dialog>
+  <div id="toast" role="status"></div>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-functions-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check-compat.js"></script>
+  <script src="firebase-config.js"></script><script src="owner-admin.js"></script>
+</body></html>

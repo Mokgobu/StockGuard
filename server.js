@@ -1,0 +1,11 @@
+'use strict';
+const express = require('express');
+const path = require('path');
+const app = express();
+const root = __dirname;
+app.disable('x-powered-by');
+app.use((req,res,next)=>{res.set({'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(), microphone=(), geolocation=()','X-Frame-Options':'DENY'});next();});
+app.use(express.static(root,{index:'index.html',dotfiles:'deny'}));
+app.get('/owner-admin',(req,res)=>res.sendFile(path.join(root,'owner-admin.html')));
+app.get('*',(req,res)=>res.sendFile(path.join(root,'index.html')));
+app.listen(process.env.PORT||3002,()=>console.log(`StockGuard running on port ${process.env.PORT||3002}`));
