@@ -140,3 +140,17 @@ exports.updatePlatformSettings = onCall({ region: REGION, enforceAppCheck: true 
   });
   return { ok: true };
 });
+
+exports.completeOnboarding = onCall({ region: REGION, enforceAppCheck: true }, async request => {
+  if (!request.auth || request.auth.token.email_verified !== true) throw new HttpsError('permission-denied', 'Verify your email before onboarding.');
+  const d=request.data||{}, uid=request.auth.uid, businessName=cleanText(d.businessName,120), ownerName=cleanText(d.ownerName,100);
+  if(!businessName||!ownerName||!d.termsAccepted||!d.privacyAccepted)throw new HttpsError('invalid-argument','Business details and legal acceptance are required.');
+  const existing=await db.collection('memberships').where('userId','==',uid).where('status','==','active').limit(1).get();
+  if(!existing.empty)throw new HttpsError('already-exists','This user already belongs to a business.');
+  const businessRef=db.collection('businesses').doc(), businessId=businessRef.id, now=FieldValue.serverTimestamp();
+  const membershipRef=db.doc(`memberships/${uid}_${businessId}`), userRef=db.doc(`users/${uid}`);
+  const business={businessId,name:businessName,ownerName,type:cleanText(d.businessType,60),email:cleanText(d.email,200),phone:cleanText(d.phone,40),location:cleanText(d.location,160),employeeCount:Math.max(1,Math.min(Number(d.employeeCount)||1,10000)),currency:'ZAR',timezone:'Africa/Johannesburg',dateFormat:'DD/MM/YYYY',warningPeriods:{critical:Number(d.criticalDays)||3,urgent:Number(d.urgentDays)||7,expiringSoon:Number(d.soonDays)||14,watchList:Number(d.watchDays)||30},discounts:{soon:10,urgent:20,critical:30},createdAt:now,updatedAt:now};
+  const batch=db.batch();batch.create(businessRef,business);batch.create(membershipRef,{businessId,userId:uid,role:'owner',status:'active',createdAt:now,updatedAt:now});batch.set(userRef,{displayName:ownerName,email:request.auth.token.email,phone:business.phone,termsAcceptedAt:now,privacyAcceptedAt:now,createdAt:now,updatedAt:now},{merge:true});batch.create(db.collection('branches').doc(),{businessId,name:'Main branch',location:business.location,active:true,createdAt:now,updatedAt:now});batch.set(db.doc(`businessAccessControls/${businessId}`),{businessId,accessStatus:'active',subscriptionStatus:'trial',updatedAt:now});batch.set(db.doc(`subscriptions/${businessId}`),{businessId,status:'trial',plan:'Starter',trialStartedAt:now,createdAt:now,updatedAt:now});await batch.commit();
+  await getAuth().setCustomUserClaims(uid,{businessId,role:'owner',...(request.auth.token.superAdmin===true?{superAdmin:true}:{})});
+  return {businessId};
+});

@@ -1,7 +1,9 @@
 import { createContext,useContext,useEffect,useMemo,useState,type ReactNode } from 'react';
 import { onAuthStateChanged,signOut,type User } from 'firebase/auth';
-import { auth } from '../firebase/client';
-type AuthState={user:User|null;loading:boolean;logout:()=>Promise<void>};
-const Context=createContext<AuthState>({user:null,loading:true,logout:async()=>{}});
-export function AuthProvider({children}:{children:ReactNode}){const [user,setUser]=useState<User|null>(null);const [loading,setLoading]=useState(Boolean(auth));useEffect(()=>auth?onAuthStateChanged(auth,u=>{setUser(u);setLoading(false)}):setLoading(false),[]);const value=useMemo(()=>({user,loading,logout:async()=>{if(auth)await signOut(auth)}}),[user,loading]);return <Context.Provider value={value}>{children}</Context.Provider>}
+import { collection,doc,onSnapshot,query,where } from 'firebase/firestore';
+import { auth,db } from '../firebase/client';
+import type { Membership,UserProfile } from '../domain/types';
+type AuthState={user:User|null;profile:UserProfile|null;membership:Membership|null;loading:boolean;refreshToken:()=>Promise<void>;logout:()=>Promise<void>};
+const Context=createContext<AuthState>({user:null,profile:null,membership:null,loading:true,refreshToken:async()=>{},logout:async()=>{}});
+export function AuthProvider({children}:{children:ReactNode}){const [user,setUser]=useState<User|null>(null),[profile,setProfile]=useState<UserProfile|null>(null),[membership,setMembership]=useState<Membership|null>(null),[loading,setLoading]=useState(Boolean(auth));useEffect(()=>auth?onAuthStateChanged(auth,u=>{setUser(u);setProfile(null);setMembership(null);if(!u||!db){setLoading(false);return}setLoading(true);let profileReady=false,membershipReady=false;const done=()=>{if(profileReady&&membershipReady)setLoading(false)};const offProfile=onSnapshot(doc(db,'users',u.uid),snap=>{setProfile(snap.exists()?{id:snap.id,...snap.data()} as UserProfile:null);profileReady=true;done()},()=>{profileReady=true;done()});const offMembership=onSnapshot(query(collection(db,'memberships'),where('userId','==',u.uid),where('status','==','active')),snap=>{const first=snap.docs[0];setMembership(first?{id:first.id,...first.data()} as Membership:null);membershipReady=true;done()},()=>{membershipReady=true;done()});return()=>{offProfile();offMembership()}}):setLoading(false),[]);const value=useMemo(()=>({user,profile,membership,loading,refreshToken:async()=>{await user?.getIdToken(true)},logout:async()=>{if(auth)await signOut(auth)}}),[user,profile,membership,loading]);return <Context.Provider value={value}>{children}</Context.Provider>}
 export const useAuth=()=>useContext(Context);
