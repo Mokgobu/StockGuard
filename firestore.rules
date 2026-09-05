@@ -2,7 +2,7 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn(){return request.auth!=null;}
-    function superAdmin(){return signedIn()&&request.auth.token.superAdmin==true&&exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid))&&get(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)).data.role=='super_admin'&&get(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)).data.active==true;}
+    function superAdmin(){return signedIn()&&exists(/databases/$(database)/documents/platformAdmins/$(request.auth.uid))&&get(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)).data.role=='super_admin'&&get(/databases/$(database)/documents/platformAdmins/$(request.auth.uid)).data.active==true;}
     function memberId(businessId){return request.auth.uid+'_'+businessId;}
     function membership(businessId){return get(/databases/$(database)/documents/memberships/$(memberId(businessId))).data;}
     function activeMember(businessId){return signedIn()&&membership(businessId).status=='active';}
@@ -16,11 +16,14 @@ service cloud.firestore {
     function validTenantCreate(){return request.resource.data.businessId is string&&activeMember(request.resource.data.businessId);}
     function timestampsOnCreate(){return request.resource.data.createdAt==request.time&&request.resource.data.updatedAt==request.time;}
     function timestampOnUpdate(){return request.resource.data.createdAt==resource.data.createdAt&&request.resource.data.updatedAt==request.time;}
-    match /publicPlatformStatus/{id}{allow read:if true;allow write:if false;}
-    match /platformSettings/{id}{allow read:if superAdmin();allow write:if false;}
+    function validAccessStatus(){return request.resource.data.accessStatus in ['active','read-only','suspended','disabled'];}
+    function validSubscriptionStatus(){return !('subscriptionStatus' in request.resource.data)||request.resource.data.subscriptionStatus in ['trial','active','past_due','cancelled'];}
+    function ownerStamped(){return request.resource.data.updatedAt==request.time&&request.resource.data.updatedBy==request.auth.uid;}
+    match /publicPlatformStatus/{id}{allow read:if true;allow create,update:if superAdmin()&&ownerStamped();allow delete:if false;}
+    match /platformSettings/{id}{allow read,create,update:if superAdmin();allow delete:if false;}
     match /platformAdmins/{uid}{allow read:if signedIn()&&request.auth.uid==uid;allow write:if false;}
-    match /businessAccessControls/{businessId}{allow read:if superAdmin()||activeMember(businessId);allow write:if false;}
-    match /adminAuditLogs/{id}{allow read:if superAdmin();allow write:if false;}
+    match /businessAccessControls/{businessId}{allow read:if superAdmin()||activeMember(businessId);allow create,update:if superAdmin()&&request.resource.data.businessId==businessId&&validAccessStatus()&&validSubscriptionStatus()&&ownerStamped();allow delete:if false;}
+    match /adminAuditLogs/{id}{allow read:if superAdmin();allow create:if superAdmin()&&request.resource.data.adminUid==request.auth.uid&&request.resource.data.createdAt==request.time;allow update,delete:if false;}
     match /users/{uid}{allow read:if signedIn()&&(request.auth.uid==uid||superAdmin());allow create:if signedIn()&&request.auth.uid==uid&&request.resource.data.email==request.auth.token.email;allow update:if signedIn()&&request.auth.uid==uid&&request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName','phone','notificationPreferences','updatedAt'])&&request.resource.data.updatedAt==request.time;allow delete:if false;}
     match /businesses/{businessId}{allow read:if readable(businessId);allow update:if writable(businessId)&&isOwner(businessId)&&sameBusiness()&&timestampOnUpdate()&&request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','ownerName','type','email','phone','location','employeeCount','warningPeriods','discounts','updatedAt']);allow create,delete:if false;}
     match /memberships/{id}{allow read:if signedIn()&&(resource.data.userId==request.auth.uid||activeMember(resource.data.businessId)||superAdmin());allow write:if false;}

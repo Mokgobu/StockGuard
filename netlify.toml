@@ -4,7 +4,7 @@
 
 [[redirects]]
   from = "/owner-admin"
-  to = "/index.html"
+  to = "/owner-admin.html"
   status = 200
 
 [[redirects]]
@@ -18,4 +18,4 @@
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    Permissions-Policy = "camera=(self), microphone=(), geolocation=()"
