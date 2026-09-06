@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "typecheck": "tsc -b --pretty false",
+    "build": "tsc -b && tsc --noEmit -p tsconfig.netlify.json && vite build",
+    "typecheck": "tsc -b --pretty false && tsc --noEmit -p tsconfig.netlify.json --pretty false",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:rules": "firebase emulators:exec --only firestore \"vitest run --config vitest.rules.config.ts\"",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-stockguard-rules \"vitest run --config vitest.rules.config.ts\"",
     "preview": "vite preview",
     "lint": "eslint .",
     "start": "vite --host 0.0.0.0"
@@ -17,6 +17,7 @@
   "dependencies": {
     "@zxing/browser": "^0.1.5",
     "firebase": "^12.2.1",
+    "firebase-admin": "^13.5.0",
     "html-to-image": "^1.11.13",
     "jspdf": "^3.0.2",
     "lucide-react": "^0.542.0",
