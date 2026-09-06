@@ -3,6 +3,12 @@ stockguard.db
 dist/
 .env
 .env.local
+.env.*
+!.env.example
+netlify.env*
+.netlify-env*
+*-firebase-adminsdk-*.json
+*service-account*.json
 .firebase/
 firebase-debug.log
 firestore-debug.log
