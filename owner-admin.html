@@ -6,14 +6,23 @@
   <link rel="stylesheet" href="owner-admin.css"><link rel="stylesheet" href="owner-admin-upgrade.css">
 </head>
 <body>
-  <section id="authGate" class="gate">
-    <form id="ownerLogin" class="login-card">
+  <section id="authGate" class="gate" aria-busy="true">
+    <section id="authChecking" class="login-card status-card" aria-live="polite">
+      <div class="owner-mark">SG</div><p class="eyebrow">Restricted system</p><h1>Checking authentication</h1>
+      <p>Checking your Firebase session and owner access…</p>
+    </section>
+    <form id="ownerLogin" class="login-card" hidden>
       <div class="owner-mark">SG</div><p class="eyebrow">Restricted system</p><h1>Owner Control Centre</h1>
       <p>Sign in with your authorised StockGuard owner account.</p>
       <label>Email<input type="email" name="email" autocomplete="username" required></label>
       <label>Password<input type="password" name="password" autocomplete="current-password" required></label>
-      <button class="primary" type="submit">Secure sign in</button><p id="authError" class="error" role="alert"></p>
+      <button class="primary" type="submit">Secure sign in</button><p id="authError" class="error" role="alert" aria-live="assertive"></p>
     </form>
+    <section id="accessDenied" class="login-card status-card" hidden>
+      <div class="owner-mark">SG</div><p class="eyebrow">Signed-in session</p><h1>Owner access denied</h1>
+      <p id="ownerStatusMessage" class="error" role="alert" aria-live="assertive"></p>
+      <button id="gateSignOut" class="secondary" type="button">Sign out</button>
+    </section>
   </section>
 
   <div id="ownerApp" class="owner-app" hidden>

@@ -1,3 +1,12 @@
+.gate[hidden],
+[hidden] {
+  display: none !important;
+}
+
+.status-card .secondary {
+  width: 100%;
+}
+
 .badge.read-only,
 .badge.past_due {
   background: #fff1dc;
